@@ -1,0 +1,64 @@
+/* Category sort: OWA's date headings no longer make sense, so they are replaced
+   by a heading above the first message of each group: a fold arrow, the category
+   color and the category name, on a tint of that color (set per group by page.js). */
+html.cfo-by-category [role="listbox"] [role="heading"] {
+  display: none !important;
+}
+
+html.cfo-by-category [role="listbox"] [data-cfo-group]::before {
+  --cfo-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Cpath d='M0 2h8L4 6.5z' fill='%23666'/%3E%3C/svg%3E");
+  content: attr(data-cfo-group);
+  display: block;
+  height: 29px;
+  overflow: hidden;
+  padding-left: calc(36px + var(--cfo-swatch-width, 0px));
+  border-bottom: 1px solid var(--cfo-accent, #eaeaea);
+  background-color: var(--cfo-tint, #ffffff);
+  background-image: var(--cfo-chevron), var(--cfo-swatches, none);
+  background-position: 14px center, 30px center;
+  background-repeat: no-repeat;
+  background-size: 8px 8px, var(--cfo-swatch-width, 0px) 14px;
+  color: var(--cfo-text, var(--cfo-heading-color, #0078d7));
+  cursor: pointer;
+  font-family: wf_segoe-ui_semibold, "Segoe UI Semibold", "Segoe WP Semibold", "Segoe UI", "Segoe WP", Tahoma, Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 29px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html.cfo-by-category [role="listbox"] [data-cfo-head-collapsed]::before {
+  --cfo-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Cpath d='M2 0v8l4.5-4z' fill='%23666'/%3E%3C/svg%3E");
+}
+
+/* Folded group: only its heading stays visible. */
+html.cfo-by-category [role="listbox"] [data-cfo-head-collapsed] > *,
+html.cfo-by-category [role="listbox"] [data-cfo-folded] {
+  display: none !important;
+}
+
+/* Copy of a message listed under another of its categories. */
+html.cfo-by-category [role="listbox"] [data-cfo-copy] {
+  display: block;
+  cursor: pointer;
+}
+
+html.cfo-by-category [role="listbox"] .cfo-copy-summary {
+  padding: 8px 12px 8px 30px;
+  border-bottom: 1px solid #eaeaea;
+  font-family: "Segoe UI", "Segoe WP", Tahoma, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+html.cfo-by-category [role="listbox"] .cfo-copy-summary > div {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Menus opened by the extension to restore OWA's sort direction. */
+html.cfo-busy [ispopup="1"] {
+  opacity: 0 !important;
+}

@@ -1,0 +1,30 @@
+{
+  "manifest_version": 2,
+  "name": "Cat Filter for OWA",
+  "version": "0.3.0",
+  "description": "Adds sorting by category to the Sort by menu of Outlook Web App (Exchange).",
+  "icons": {
+    "48": "icons/icon.svg",
+    "96": "icons/icon.svg"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "cat-filter-for-owa@walpole13.github.io",
+      "strict_min_version": "115.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
+  },
+  "permissions": ["storage"],
+  "content_scripts": [
+    {
+      "matches": ["*://*/owa/*"],
+      "exclude_matches": ["*://*/owa/auth/*"],
+      "js": ["src/content.js"],
+      "css": ["src/page.css"],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": ["src/sort-core.js", "src/page.js"]
+}
