@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
-  "name": "Cat Filter for OWA",
-  "version": "0.3.0",
+  "name": "OWA - Category Filter",
+  "version": "0.3.1",
   "description": "Adds sorting by category to the Sort by menu of Outlook Web App (Exchange).",
   "icons": {
     "48": "icons/icon.svg",

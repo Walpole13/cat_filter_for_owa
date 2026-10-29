@@ -1,4 +1,4 @@
-# Cat Filter for OWA
+# OWA - Category Filter
 
 A Firefox extension that adds **sorting by category** to Outlook Web App (on-premises Exchange 2016/2019), which OWA does not offer.
 

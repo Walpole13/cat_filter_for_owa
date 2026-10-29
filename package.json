@@ -1,6 +1,6 @@
 {
   "name": "cat-filter-for-owa",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "license": "MIT",
   "description": "Firefox extension that adds sorting by category to Outlook Web App.",
