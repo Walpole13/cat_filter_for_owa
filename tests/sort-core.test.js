@@ -2,7 +2,21 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { ADAPTERS, categoryNames, sortByCategory, pageStart, groupLabels, categoryColors, swatches, locateRun } = require("../src/sort-core.js");
+const {
+  ADAPTERS,
+  categoryNames,
+  sortByCategory,
+  pageStart,
+  groupLabels,
+  groupCounts,
+  countLabel,
+  categoryColors,
+  categoriesChanged,
+  parseColor,
+  isDark,
+  swatches,
+  mapDisplayedRows,
+} = require("../src/sort-core.js");
 
 const conversation = (id, categories) => ({
   ConversationId: { Id: `conv-${id}` },
@@ -48,9 +62,19 @@ test("pageStart handles offsets and seek-to-item paging (inclusive)", () => {
 
 test("groupLabels finds group starts, case-insensitively", () => {
   const rows = sortByCategory(inbox, ADAPTERS.FindConversation.categoriesOf);
-  const { labels, starts } = groupLabels(rows, "No category");
+  const { labels, keys, starts } = groupLabels(rows, "No category");
   assert.deepEqual([...starts], [0, 1, 2, 4]);
   assert.deepEqual(labels, ["No category", "AJ en attente", "développement", "développement", "Urgent", "Urgent", "Urgent"]);
+  assert.deepEqual(keys, ["", "aj en attente", "développement", "développement", "urgent", "urgent", "urgent"]);
+});
+
+test("categories differing only by an accent stay apart; a category named like the uncategorized group too", () => {
+  const entries = [conversation(1, ["Relance"]), conversation(2, ["Relancé"]), conversation(3, ["No category"]), conversation(4)];
+  const rows = sortByCategory(entries, ADAPTERS.FindConversation.categoriesOf);
+  const { labels, keys, starts } = groupLabels(rows, "No category");
+  assert.equal(starts.size, 4);
+  assert.deepEqual(labels, ["No category", "No category", "Relance", "Relancé"]);
+  assert.notEqual(keys[0], keys[1], "the real category and the uncategorized group have different keys");
 });
 
 test("categoryColors maps OWA's master list to Outlook preset colors", () => {
@@ -68,18 +92,6 @@ test("categoryColors maps OWA's master list to Outlook preset colors", () => {
 test("swatches draws one bar per color", () => {
   assert.deepEqual(swatches(["red"]), { image: "linear-gradient(to right, red 0px 5px, transparent 5px 8px)", width: 5 });
   assert.equal(swatches(["red", "blue"]).width, 13);
-});
-
-test("locateRun finds the displayed rows in the sorted list, wherever the list is scrolled", () => {
-  const order = ["a", "b", "c", "d", "e", "f", "g", "h"];
-  assert.deepEqual(locateRun(["a", "b", "c", "d", "e", "f"], order), { shownOffset: 0, sortedStart: 0 });
-  assert.deepEqual(locateRun(["c", "d", "e", "f", "g", "h"], order), { shownOffset: 0, sortedStart: 2 }, "top rows not rendered");
-  assert.deepEqual(locateRun(["new", "a", "b", "c", "d", "e", "f"], order), { shownOffset: 1, sortedStart: 0 }, "message added at the top");
-  assert.deepEqual(locateRun(["a", "b"], order), { shownOffset: 0, sortedStart: 0 }, "short list");
-  assert.equal(locateRun(["c", "a", "b", "d", "e", "f"], order), null, "date order of another folder");
-  assert.equal(locateRun([], order), null);
-  const repeated = ["x", "a", "y", "a", "b", "c"];
-  assert.deepEqual(locateRun(["a", "b", "c"], repeated), { shownOffset: 0, sortedStart: 3 }, "message listed in two groups");
 });
 
 test("FindConversation adapter reads and rewrites the response body", () => {
@@ -108,4 +120,67 @@ test("list requests are recognized, searches are not", () => {
   assert.equal(ADAPTERS.FindConversation.isList({ ShapeName: "ConversationListView", QueryString: "x" }), false);
   assert.equal(ADAPTERS.FindItem.isList({ ShapeName: "MailListItem", Traversal: "Shallow" }), true);
   assert.equal(ADAPTERS.FindConversation.folderOf({ ParentFolderId: { BaseFolderId: { Id: "inbox" } } }), "inbox");
+});
+
+test("groupCounts counts messages and unread ones per group, skipping removed ones", () => {
+  const rows = sortByCategory(inbox, ADAPTERS.FindConversation.categoriesOf);
+  const { starts } = groupLabels(rows, "No category");
+  const unread = new Set(["conv-2", "conv-5"]);
+  const counts = groupCounts(rows, starts, (row) => row.entry.ConversationId.Id !== "conv-4", (row) => unread.has(row.entry.ConversationId.Id));
+  assert.deepEqual([...counts], [
+    [0, { count: 1, unread: 0 }],
+    [1, { count: 1, unread: 1 }],
+    [2, { count: 2, unread: 0 }],
+    [4, { count: 2, unread: 2 }],
+  ]);
+});
+
+test("countLabel shows the message count and, when any, the unread count", () => {
+  assert.equal(countLabel({ count: 12, unread: 0 }, true), " (12)");
+  assert.equal(countLabel({ count: 12, unread: 1 }, true), " (12 · 1 non lu)");
+  assert.equal(countLabel({ count: 12, unread: 3 }, true), " (12 · 3 non lus)");
+  assert.equal(countLabel({ count: 12, unread: 3 }, false), " (12 · 3 unread)");
+});
+
+test("isDark tells dark list backgrounds from light ones", () => {
+  assert.deepEqual(parseColor("rgba(0, 0, 0, 0)"), [0, 0, 0, 0]);
+  assert.equal(parseColor("transparent"), null);
+  assert.equal(isDark("rgb(255, 255, 255)"), false);
+  assert.equal(isDark("rgb(24, 26, 27)"), true);
+});
+
+test("mapDisplayedRows follows OWA's rows through new, removed and scrolled-away rows", () => {
+  const view = { realOrder: ["a", "b", "c", "d", "e", "f", "g", "h"], realPositions: [0, 1, 2, 4, 5, 6, 7, 8] };
+  assert.deepEqual(mapDisplayedRows(["a", "b", "c", "d", "e", "f"], view), { positions: [0, 1, 2, 4, 5, 6], missing: [], unknown: false });
+  assert.deepEqual(
+    mapDisplayedRows(["new", "a", "b", "c", "d", "e", "f"], view),
+    { positions: [-1, 0, 1, 2, 4, 5, 6], missing: [], unknown: true },
+    "new message at the top",
+  );
+  assert.deepEqual(
+    mapDisplayedRows(["a", "b", "c", "e", "f", "g", "h"], view),
+    { positions: [0, 1, 2, 5, 6, 7, 8], missing: [4], unknown: false },
+    "a message deleted from the list",
+  );
+  assert.deepEqual(
+    mapDisplayedRows(["e", "a", "b", "c", "d", "f", "g"], view),
+    { positions: [-1, 0, 1, 2, 4, 6, 7], missing: [5], unknown: true },
+    "a conversation moved to the top by a reply",
+  );
+  assert.equal(mapDisplayedRows(["x", "y", "z"], view), null, "another folder");
+  assert.equal(mapDisplayedRows(["b", "c"], view), null, "a small folder sharing two conversations");
+  const tiny = { realOrder: ["b", "c", "d"], realPositions: [0, 1, 2] };
+  assert.equal(mapDisplayedRows(["x", "b", "c", "d", "y", "z", "w", "v"], tiny), null, "a long list containing a small folder's rows");
+  const small = { realOrder: ["a", "b"], realPositions: [0, 1] };
+  assert.deepEqual(mapDisplayedRows(["a", "b"], small), { positions: [0, 1], missing: [], unknown: false }, "a small sorted folder");
+});
+
+test("categoriesChanged spots a category added, changed or removed in a row", () => {
+  const urgent = "#910A19";
+  assert.equal(categoriesChanged([urgent], ["rgb(145, 10, 25)"]), false);
+  assert.equal(categoriesChanged([], ["rgb(145, 10, 25)"]), true, "category added");
+  assert.equal(categoriesChanged([urgent], ["rgb(51, 186, 177)"]), true, "category changed");
+  assert.equal(categoriesChanged([urgent], []), true, "categories removed");
+  assert.equal(categoriesChanged([urgent, "#33BAB1", "#F07D88", "#FF8C00"], ["rgb(145, 10, 25)"]), false, "not every bar drawn");
+  assert.equal(categoriesChanged([], []), false);
 });

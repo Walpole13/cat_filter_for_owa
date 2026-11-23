@@ -19,6 +19,13 @@ document.addEventListener("cat-filter-for-owa:hello", () => {
   });
 });
 
+// Another OWA tab changed the preferences: pass them on, so the tabs do not overwrite
+// each other's changes.
+browser.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || !changes[PREFS_KEY]) return;
+  document.dispatchEvent(new CustomEvent("cat-filter-for-owa:prefs", { detail: JSON.stringify(changes[PREFS_KEY].newValue || null) }));
+});
+
 document.addEventListener("cat-filter-for-owa:save", (event) => {
   try {
     browser.storage.local.set({ [PREFS_KEY]: JSON.parse(event.detail) });

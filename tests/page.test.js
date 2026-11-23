@@ -38,12 +38,14 @@ function createPage({ stored = {}, answer }) {
   });
 
   class FakeXHR {
+    static OPENED = 1;
     constructor() {
       this.readyState = 0;
       this.responseType = "";
     }
     open(method, url) {
       this.url = url;
+      this.readyState = 1;
     }
     setRequestHeader(name, value) {
       (this.sentHeaders ||= []).push([name, value]);
@@ -52,6 +54,8 @@ function createPage({ stored = {}, answer }) {
       this.sentBody = body;
       sent.push(this);
     }
+    // As in browsers, aborting a request that was opened but not sent leaves it OPENED.
+    abort() {}
     get responseText() {
       return this.raw || "";
     }
@@ -161,4 +165,22 @@ test("if the extension never answers, the page's own preferences are used", asyn
   await wait(1500);
   assert.equal(page.sent.length, 1);
   assert.ok(page.fetches.length >= 1, "sorted from the page's own preferences");
+});
+
+test("two list requests at once load the folder only once", async () => {
+  const page = createPage({ answer: { folders: ["inbox"], collapsed: {} } });
+  page.requestList();
+  page.requestList();
+  await wait(100);
+  assert.equal(page.sent.length, 2);
+  const listFetches = page.fetches.filter((body) => body.__type === "FindConversationJsonRequest:#Exchange");
+  assert.equal(listFetches.length, 1, "the second request shares the load in progress");
+});
+
+test("a request OWA aborted while the folder was loading is not sent", async () => {
+  const page = createPage({ answer: { folders: ["inbox"], collapsed: {} } });
+  const xhr = page.requestList();
+  xhr.abort(); // e.g. the user switched folders; readyState stays OPENED
+  await wait(100);
+  assert.equal(page.sent.length, 0);
 });

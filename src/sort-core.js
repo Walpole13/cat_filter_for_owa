@@ -2,7 +2,8 @@
 
 // Pure category-sort logic, shared by the OWA page script and the tests.
 (function (root) {
-  const collator = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
+  // Categories are told apart by accents but not by case ("Relance" vs "Relancé").
+  const collator = new Intl.Collator("fr", { sensitivity: "accent", numeric: true });
 
   const sortResult = (order, field) => ({
     __type: "SortResults:#Exchange",
@@ -46,20 +47,25 @@
     return paging.Offset || 0;
   }
 
-  // Group label of each sorted row, and the positions where a new group starts.
+  // Group of each sorted row: the label shown, a key that identifies the group (for
+  // folding and colors; the uncategorized group's key cannot clash with a category's),
+  // and the positions where a new group starts.
   function groupLabels(rows, uncategorizedLabel) {
     const labels = [];
+    const keys = [];
     const starts = new Set();
     rows.forEach((row, index) => {
       const previous = rows[index - 1];
       if (index === 0 || collator.compare(row.category, previous.category) !== 0) {
         starts.add(index);
         labels.push(row.category || uncategorizedLabel);
+        keys.push(row.category ? row.category.toLocaleLowerCase("fr") : "");
       } else {
         labels.push(labels[index - 1]);
+        keys.push(keys[index - 1]);
       }
     });
-    return { labels, starts };
+    return { labels, keys, starts };
   }
 
   // Outlook's 25 category colors (preset0 to preset24), as OWA draws them:
@@ -84,24 +90,82 @@
     return colors;
   }
 
+  // Number of messages, and of unread ones, in each group (keyed by the group's first position).
+  function groupCounts(rows, starts, isCounted, isUnread) {
+    const counts = new Map();
+    let current = null;
+    rows.forEach((row, pos) => {
+      if (starts.has(pos)) counts.set(pos, (current = { count: 0, unread: 0 }));
+      if (!current || !isCounted(row)) return;
+      current.count += 1;
+      if (isUnread(row)) current.unread += 1;
+    });
+    return counts;
+  }
+
+  // Text added after the category name in its heading.
+  function countLabel({ count, unread }, french) {
+    const unreadText = !unread ? "" : french ? ` · ${unread} non lu${unread > 1 ? "s" : ""}` : ` · ${unread} unread`;
+    return ` (${count}${unreadText})`;
+  }
+
+  // "rgb(…)" / "rgba(…)" from getComputedStyle, as [r, g, b, alpha]; null otherwise.
+  function parseColor(color) {
+    const match = /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+))?\s*\)$/.exec(String(color).trim());
+    return match ? [Number(match[1]), Number(match[2]), Number(match[3]), match[4] === undefined ? 1 : Number(match[4])] : null;
+  }
+
+  function isDark(color) {
+    const rgb = parseColor(color);
+    return !!rgb && (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255 < 0.45;
+  }
+
+  // Whether the category bars of a row (colors as drawn, "rgb(…)") no longer match the
+  // categories the sorted list was built with (colors as "#RRGGBB"): a category was
+  // added, changed or all of them removed. OWA may not draw every bar of a row with
+  // many categories, so missing bars alone are not a change.
+  function categoriesChanged(expected, shown) {
+    const known = new Set(expected.map((hex) => String(parseColor(hexToRgb(hex)))));
+    if (known.size && !shown.length) return true;
+    return shown.some((color) => !known.has(String(parseColor(color))));
+  }
+
+  function hexToRgb(hex) {
+    const value = parseInt(String(hex).replace("#", ""), 16);
+    return `rgb(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255})`;
+  }
+
   // Category markers drawn like OWA's own: 5px wide bars, 3px apart.
   function swatches(colors) {
     const stops = colors.map((color, i) => `${color} ${i * 8}px ${i * 8 + 5}px, transparent ${i * 8 + 5}px ${i * 8 + 8}px`);
     return { image: `linear-gradient(to right, ${stops.join(", ")})`, width: colors.length * 8 - 3 };
   }
 
-  // Where do the rows on screen sit in a list sorted by the extension? OWA only keeps
-  // the rows around the scroll position, so they must form a run of consecutive rows
-  // of the sorted list. A few leading rows may be skipped (a message that just arrived
-  // at the top). Returns null when the displayed list is not that sorted list.
-  function locateRun(shown, sorted, length = 6, slack = 2) {
-    const k = Math.min(length, shown.length);
-    if (k === 0) return null;
-    for (let a = 0; a <= slack && a + k <= shown.length; a++) {
-      for (let start = sorted.indexOf(shown[a]); start !== -1; start = sorted.indexOf(shown[a], start + 1)) {
-        let same = true;
-        for (let i = 1; i < k && same; i++) same = sorted[start + i] === shown[a + i];
-        if (same) return { shownOffset: a, sortedStart: start };
+  // Position in the sorted rows of each row OWA displays (ids in display order), or
+  // null when the displayed list is not this sorted list. OWA keeps the order it was
+  // given and only renders the rows around the scroll position; since then, rows may
+  // have been removed (deleted, moved away: up to `gap` in a row are skipped and
+  // reported as missing) and new ones may sit at the top (left at -1, like any row out
+  // of order, and reported as unknown). At least `need` rows must follow that order (or
+  // all of them, in a short list), so a few rows shared with another folder do not match.
+  function mapDisplayedRows(shown, view, { slack = 25, gap = 5, need = 6 } = {}) {
+    for (let first = 0; first <= slack && first < shown.length; first++) {
+      for (let start = view.realOrder.indexOf(shown[first]); start !== -1; start = view.realOrder.indexOf(shown[first], start + 1)) {
+        const positions = shown.map(() => -1);
+        const missing = [];
+        let matched = 0;
+        let real = start;
+        for (let i = first; i < shown.length; i++) {
+          let skip = 0;
+          while (skip <= gap && real + skip < view.realOrder.length && view.realOrder[real + skip] !== shown[i]) skip++;
+          if (skip > gap || real + skip >= view.realOrder.length) break;
+          for (let s = 0; s < skip; s++) missing.push(view.realPositions[real + s]);
+          positions[i] = view.realPositions[real + skip];
+          real += skip + 1;
+          matched += 1;
+        }
+        const enough = matched >= Math.min(need, view.realOrder.length) && matched >= Math.min(need, shown.length - first);
+        if (enough) return { positions, missing, unknown: positions.some((pos) => pos < 0) };
       }
     }
     return null;
@@ -124,6 +188,7 @@
         body.TotalConversationsInView = total;
       },
       categoriesOf: (entry) => entry.Categories,
+      isUnread: (entry) => (entry.UnreadCount || 0) > 0,
       rowIdOf: (entry) => entry.ConversationId && entry.ConversationId.Id,
       keyOf: (entry) => entry.InstanceKey || (entry.ConversationId && entry.ConversationId.Id),
       itemIdOf: (entry) => entry.ItemIds && entry.ItemIds[0] && entry.ItemIds[0].Id,
@@ -153,6 +218,7 @@
         rootFolder.IncludesLastItemInRange = offset >= total;
       },
       categoriesOf: (entry) => entry.Categories,
+      isUnread: (entry) => entry.IsRead === false,
       rowIdOf: (entry) => entry.ConversationId && entry.ConversationId.Id,
       keyOf: (entry) => entry.InstanceKey || (entry.ItemId && entry.ItemId.Id),
       itemIdOf: (entry) => entry.ItemId && entry.ItemId.Id,
@@ -163,7 +229,21 @@
     },
   };
 
-  const api = { ADAPTERS, categoryNames, sortByCategory, pageStart, groupLabels, categoryColors, swatches, locateRun };
+  const api = {
+    ADAPTERS,
+    categoryNames,
+    sortByCategory,
+    pageStart,
+    groupLabels,
+    groupCounts,
+    countLabel,
+    categoryColors,
+    categoriesChanged,
+    parseColor,
+    isDark,
+    swatches,
+    mapDisplayedRows,
+  };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.__catFilterForOwaCore = api;
 })(globalThis);

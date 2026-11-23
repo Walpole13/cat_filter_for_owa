@@ -6,12 +6,15 @@ It blends into OWA: a **Category** entry appears in the **Filter › Sort by** m
 
 - the message list is grouped by category: uncategorized messages first, then categories A to Z;
 - inside each category, messages stay newest first;
-- OWA's date headings ("Yesterday", "Last week"…) are replaced by category headings in the category's color (the color chosen in Outlook);
+- OWA's date headings ("Yesterday", "Last week"…) are replaced by category headings in the category's color (the color chosen in Outlook), with the number of messages and of unread ones, kept up to date as you read;
 - clicking a heading folds or unfolds its category;
 - a message with several categories is listed under each of them;
+- a new message, a reply that brings a conversation back to the top, or a change of category is sorted into the right group: the list reloads by itself, at the same scroll position (never while you type or have a menu open);
+- the headings follow the page's colors, including dark themes such as the one applied by the Dark Reader extension;
+- search results are left as OWA shows them; the folder is sorted by category again once the search ends;
 - everything else is OWA's own behaviour: reading pane, selection, scrolling, filters (Unread, Flagged…), Conversations or Messages view.
 
-The choice is remembered per folder, as are folded categories, from one session to the next: they are kept in the extension's own storage, which survives signing out of OWA and clearing the browser's site data. Picking another sort option (Date, From…) goes back to OWA's normal behaviour.
+The choice is remembered per folder, as are folded categories, from one session to the next: they are kept in the extension's own storage, which survives signing out of OWA and clearing the browser's site data, and is shared by all open OWA tabs. Picking another sort option (Date, From…) goes back to OWA's normal behaviour.
 
 ## How it works
 
@@ -21,7 +24,6 @@ Exchange refuses to sort by category on the server side. For folders where this 
 - No data leaves the browser: the only requests go to the Exchange server itself, and nothing is written to disk except the folders sorted by category and the folded categories (in the extension's storage, and the page's as a fallback).
 - Large folders take a little longer to open in this mode, since the whole folder has to be loaded first.
 - OWA shows each conversation only once, so when a message has several categories, OWA's own row sits in its first category and the other groups show a copy of it. Clicking a copy opens the message in the reading pane.
-- New messages arriving while the folder is open appear at the top until the list is reloaded (by switching folders, for instance).
 - In Firefox, OWA's colored category bars in the message rows do not show up on their own; the extension makes them visible, in every folder.
 
 The new Outlook on the web (outlook.office.com) is not supported.
